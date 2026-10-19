@@ -1,0 +1,44 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      PUBLIC_URL: https://zvonitel.ru
+      ADMIN_NICK: ${ADMIN_NICK:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:?укажите ADMIN_PASS в .env}
+      ICE_SERVERS: ${ICE_SERVERS:-[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.zvonitel.ru:3478?transport=udp","turn:turn.zvonitel.ru:3478?transport=tcp"],"username":"zvonitel","credential":"${TURN_SECRET}"}]}
+    volumes:
+      - zv-data:/data
+    expose:
+      - "3000"
+    depends_on:
+      - coturn
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+
+  # TURN/STUN: без него часть пользователей за симметричным NAT не соединится
+  coturn:
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      -n --log-file=stdout
+      --realm=zvonitel.ru
+      --user=zvonitel:${TURN_SECRET}
+      --min-port=49160 --max-port=49200
+      --fingerprint --no-tls --no-dtls
+
+volumes:
+  zv-data:
